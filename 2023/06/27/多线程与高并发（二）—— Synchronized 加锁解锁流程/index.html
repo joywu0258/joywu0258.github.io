@@ -1,0 +1,235 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Ashley的个人博客空间 | Ashley的个人博客空间</title><meta name="author" content="joywu"><meta name="copyright" content="joywu"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="多线程与高并发（二）—— Synchronized 加锁解锁流程 前言上篇主要对 Synchronized 的锁实现原理 Monitor 机制进行了介绍，由于 Monitor 基于操作系统调用，上下文切换导致开销大，在竞争不激烈时性能不算很好， 在 jdk6 之后进了系列优化。前文对优化措施进行了简单介绍，下面将一一介绍这些优化的细节，行文思路大致如下：  从重量级锁的优化开始讲，一是自旋锁，二是">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Ashley的个人博客空间">
+<meta property="og:url" content="http://ashleyye.top/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%BA%8C%EF%BC%89%E2%80%94%E2%80%94%20Synchronized%20%E5%8A%A0%E9%94%81%E8%A7%A3%E9%94%81%E6%B5%81%E7%A8%8B/index.html">
+<meta property="og:site_name" content="Ashley的个人博客空间">
+<meta property="og:description" content="多线程与高并发（二）—— Synchronized 加锁解锁流程 前言上篇主要对 Synchronized 的锁实现原理 Monitor 机制进行了介绍，由于 Monitor 基于操作系统调用，上下文切换导致开销大，在竞争不激烈时性能不算很好， 在 jdk6 之后进了系列优化。前文对优化措施进行了简单介绍，下面将一一介绍这些优化的细节，行文思路大致如下：  从重量级锁的优化开始讲，一是自旋锁，二是">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png">
+<meta property="article:published_time" content="2023-06-27T13:21:01.510Z">
+<meta property="article:modified_time" content="2023-06-27T08:21:10.300Z">
+<meta property="article:author" content="joywu">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png"><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="http://ashleyye.top/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%BA%8C%EF%BC%89%E2%80%94%E2%80%94%20Synchronized%20%E5%8A%A0%E9%94%81%E8%A7%A3%E9%94%81%E6%B5%81%E7%A8%8B/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.min.css" media="print" onload="this.media='all'"><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"找不到您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  noticeOutdate: undefined,
+  highlight: {"plugin":"highlighjs","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false},
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'fancybox',
+  Snackbar: undefined,
+  source: {
+    justifiedGallery: {
+      js: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.js',
+      css: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.css'
+    }
+  },
+  isPhotoFigcaption: false,
+  islazyload: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Ashley的个人博客空间',
+  isPost: true,
+  isHome: false,
+  isHighlightShrink: false,
+  isToc: true,
+  postUpdate: '2023-06-27 16:21:10'
+}</script><noscript><style type="text/css">
+  #nav {
+    opacity: 1
+  }
+  .justified-gallery img {
+    opacity: 1
+  }
+
+  #recent-posts time,
+  #post-meta time {
+    display: inline !important
+  }
+</style></noscript><script>(win=>{
+    win.saveToLocal = {
+      set: function setWithExpiry(key, value, ttl) {
+        if (ttl === 0) return
+        const now = new Date()
+        const expiryDay = ttl * 86400000
+        const item = {
+          value: value,
+          expiry: now.getTime() + expiryDay,
+        }
+        localStorage.setItem(key, JSON.stringify(item))
+      },
+
+      get: function getWithExpiry(key) {
+        const itemStr = localStorage.getItem(key)
+
+        if (!itemStr) {
+          return undefined
+        }
+        const item = JSON.parse(itemStr)
+        const now = new Date()
+
+        if (now.getTime() > item.expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return item.value
+      }
+    }
+  
+    win.getScript = url => new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = url
+      script.async = true
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function() {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    })
+  
+    win.getCSS = (url,id = false) => new Promise((resolve, reject) => {
+      const link = document.createElement('link')
+      link.rel = 'stylesheet'
+      link.href = url
+      if (id) link.id = id
+      link.onerror = reject
+      link.onload = link.onreadystatechange = function() {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        link.onload = link.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(link)
+    })
+  
+      win.activateDarkMode = function () {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      win.activateLightMode = function () {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+      const t = saveToLocal.get('theme')
+    
+          if (t === 'dark') activateDarkMode()
+          else if (t === 'light') activateLightMode()
+        
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        if (asideStatus === 'hide') {
+          document.documentElement.classList.add('hide-aside')
+        } else {
+          document.documentElement.classList.remove('hide-aside')
+        }
+      }
+    
+    const detectApple = () => {
+      if(/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)){
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+    })(window)</script><link rel="stylesheet" href="/css/background.css"></head><body><div id="web_bg"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img is-center"><img src="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png" onerror="onerror=null;src='/img/friend_404.gif'" alt="avatar"/></div><div class="sidebar-site-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">13</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">10</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><hr class="custom-hr"/><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fa fa-graduation-cap"></i><span> 博文</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/categories/"><i class="fa-fw fa fa-archive"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fa fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/archives/"><i class="fa-fw fa fa-folder-open"></i><span> 归档</span></a></li></ul></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fas fa-list"></i><span> 生活</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/shuoshuo/"><i class="fa-fw fa fa-comments-o"></i><span> 分享</span></a></li><li><a class="site-page child" href="/photos/"><i class="fa-fw fa fa-camera-retro"></i><span> 相册</span></a></li><li><a class="site-page child" href="/music/"><i class="fa-fw fa fa-music"></i><span> 音乐</span></a></li><li><a class="site-page child" href="/movies/"><i class="fa-fw fas fa-video"></i><span> 影视</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/links/"><i class="fa-fw fa fa-link"></i><span> 友链</span></a></div><div class="menus_item"><a class="site-page" href="/comment/"><i class="fa-fw fa fa-paper-plane"></i><span> 留言板</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于笔者</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a href="/" title="Ashley的个人博客空间"><span class="site-name">Ashley的个人博客空间</span></a></span><div id="menus"><div id="search-button"><a class="site-page social-icon search" href="javascript:void(0);"><i class="fas fa-search fa-fw"></i><span> 搜索</span></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fa fa-graduation-cap"></i><span> 博文</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/categories/"><i class="fa-fw fa fa-archive"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fa fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/archives/"><i class="fa-fw fa fa-folder-open"></i><span> 归档</span></a></li></ul></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fas fa-list"></i><span> 生活</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/shuoshuo/"><i class="fa-fw fa fa-comments-o"></i><span> 分享</span></a></li><li><a class="site-page child" href="/photos/"><i class="fa-fw fa fa-camera-retro"></i><span> 相册</span></a></li><li><a class="site-page child" href="/music/"><i class="fa-fw fa fa-music"></i><span> 音乐</span></a></li><li><a class="site-page child" href="/movies/"><i class="fa-fw fas fa-video"></i><span> 影视</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/links/"><i class="fa-fw fa fa-link"></i><span> 友链</span></a></div><div class="menus_item"><a class="site-page" href="/comment/"><i class="fa-fw fa fa-paper-plane"></i><span> 留言板</span></a></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于笔者</span></a></div></div><div id="toggle-menu"><a class="site-page" href="javascript:void(0);"><i class="fas fa-bars fa-fw"></i></a></div></div></nav><div id="post-info"><h1 class="post-title">无题</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2023-06-27T13:21:01.510Z" title="发表于 2023-06-27 21:21:01">2023-06-27</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2023-06-27T08:21:10.300Z" title="更新于 2023-06-27 16:21:10">2023-06-27</time></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">字数总计:</span><span class="word-count">3.5k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>11分钟</span></span><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">阅读量:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="post-content" id="article-container"><p>多线程与高并发（二）—— Synchronized 加锁解锁流程</p>
+<h1 id="前言"><a href="#前言" class="headerlink" title="前言"></a>前言</h1><p>上篇主要对 Synchronized 的锁实现原理 Monitor 机制进行了介绍，由于 Monitor 基于操作系统调用，上下文切换导致开销大，在竞争不激烈时性能不算很好， 在 jdk6 之后进了系列优化。前文对优化措施进行了简单介绍，下面将一一介绍这些优化的细节，行文思路大致如下：</p>
+<ol>
+<li>从重量级锁的优化开始讲，一是自旋锁，二是尽量避免进入 Monitor ,即使用轻量级锁</li>
+<li>讲解轻量级锁及加锁解锁流程</li>
+<li>轻量级锁在没有竞争时，每次重入仍然需要执行cas操作，为解决这个问题，因而产生了偏向锁</li>
+<li>详细介绍偏向锁</li>
+</ol>
+<h2 id="Synchronized-锁的细节"><a href="#Synchronized-锁的细节" class="headerlink" title="Synchronized 锁的细节"></a>Synchronized 锁的细节</h2><h3 id="一、自旋锁"><a href="#一、自旋锁" class="headerlink" title="一、自旋锁"></a>一、自旋锁</h3><p>自旋锁比较简单，逻辑在上篇也已经进行过阐述，这一篇章我们着重看下它的性能如何？<br>在竞争度较小的时候，重量级锁的上下文切换导致的开销相对于 CPU 处理任务的时间占比较重，此种情况下，自旋锁的性能有优势，因自旋而导致的 CPU 浪费在可接受范围内；当竞争激烈的时候，继续使用自旋锁则得不偿失，性能上比直接使用重量级锁要差，大量的等待锁的时间被浪费。<br>根据任务处理时间不同，自旋锁表现也不一，在任务持续时间长的情况下，自旋太久显然是对 CPU 时间片的浪费，且因任务持续时间长，在 10 此默认自旋次数的情况下，易出现自旋结束也无法获取到锁，那么此次空转就是毫无收益的性能浪费。在任务处理时间较短的情况下，显然自旋获得锁的几率要大，因此如果对要执行的任务有很明确的处理时长认知，可以根据情况适当的调整初始自旋次数，JVM 参数为：-XX:PreBlockSpin。</p>
+<h3 id="二、轻量级锁"><a href="#二、轻量级锁" class="headerlink" title="二、轻量级锁"></a>二、轻量级锁</h3><p>根据观察，多线程中并不总是存在着竞争，使用轻量级锁避免了锁 Monitor 这繁重的数据结构，轻量级锁通常只锁一个字段（锁记录），在 HotSpot 中的实现是在当前线程的栈帧中创建锁记录结构（Lock Record）。</p>
+<h4 id="1-轻量级锁加锁流程"><a href="#1-轻量级锁加锁流程" class="headerlink" title="1.轻量级锁加锁流程"></a>1.轻量级锁加锁流程</h4><ol>
+<li>在当前线程的栈帧中创建 Lock Record</li>
+<li>构建一个无锁状态的 Displaced Mark Word </li>
+<li>将 Displaced Mark Word 存储到 Lock Record 中的 _displaced_header 属性</li>
+<li>CAS 更新 Displaced Mark Word 指针，注意【3】是将 Lock record 的 header 的值设置成一个 displaced mark word，【4】这一步是将当前对象头的 Mark Word 中的高30 位（全文都是只针对 32 位虚拟机来谈）指向 Lock Record 中的 header。<br>4.1 CAS 成功，执行同步代码块<br>4.2 CAS 失败，存在两种情况<br> 3.2.1 判断是否为锁重入（关于轻量级锁的可重入有疑问，见下文）<br> 3.2.2 锁被其他线程占有，需要竞争锁，进入锁膨胀过程</li>
+<li>加锁成功的话，当前对象的 Mark Word 后两位锁标志位置为 00，余下高位作为指针存储 Lock Record 的地址</li>
+</ol>
+<p>轻量级锁加锁源码如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">// traditional lightweight locking</span><br><span class="line">if (!success) &#123;</span><br><span class="line">  // markOop就是对象头结构， 生成对象头，这个对象头的状态设置为无锁，生成的这个对象头就是displaced Mark word</span><br><span class="line">  markOop displaced = lockee-&gt;mark()-&gt;set_unlocked();</span><br><span class="line">  // 将 displaced Mark word 设置到 lock record 的 _displaced_header 字段</span><br><span class="line">  entry-&gt;lock()-&gt;set_displaced_header(displaced);</span><br><span class="line">  // 判断JVM参数-XX:+UseHeavyMonitors 是否设置了只有重量级锁</span><br><span class="line">  bool call_vm = UseHeavyMonitors;</span><br><span class="line">  // cmpxchg_ptr即 cas 交换指令，将当前对象头的 Mark Word 中的高30 位指向 Lock Record 中的 header 使用重量级锁或者CAS 失败进入这个if块</span><br><span class="line">  if (call_vm || Atomic::cmpxchg_ptr(entry, lockee-&gt;mark_addr(), displaced) != displaced) &#123;</span><br><span class="line">    // Is it simple recursive case? 是否为锁重入</span><br><span class="line">    if (!call_vm &amp;&amp; THREAD-&gt;is_lock_owned((address) displaced-&gt;clear_lock_bits())) &#123;</span><br><span class="line">      entry-&gt;lock()-&gt;set_displaced_header(NULL);</span><br><span class="line">    &#125; else &#123;</span><br><span class="line">      CALL_VM(InterpreterRuntime::monitorenter(THREAD, entry), handle_exception);</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="2-轻量级锁重入的疑问"><a href="#2-轻量级锁重入的疑问" class="headerlink" title="2.轻量级锁重入的疑问"></a>2.轻量级锁重入的疑问</h4><p><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220719163513101-1993001053.png"><br>关于轻量级锁的重入，实现方式主要有两种，一是如 Monitor 一样通过一个变量来计数，二是每重入一次都生成一个 Lock Record，对Lock Record 的个数计数来隐士计数。在查找资料的过程中发现，大部分的说法是 HotSpot 选择第二种实现方式。</p>
+<ol>
+<li>第一个疑问是为何会选择第二种实现方式，是否对空间造成了一定的浪费，生成 Lock Record 相比整型加一操作性能消耗应该也更大，不知道 HotSpot 作何考量选择此种方式。下图为此种实现方式下的轻量级锁结构。<br><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220719092526521-52376667.png"><center>轻量级锁结构</center></li>
+<li>第一点提出的是多次生成锁记录，但是在代码中没有看到如何重新生成锁记录（如有大佬解惑，不胜感激），是否 lock() 函数创建了一个新的 Lock Record？</li>
+</ol>
+<p><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220719164119778-1497565036.png"></p>
+<p><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220719164654704-940460253.png"></p>
+<h3 id="3-轻量级锁解锁流程如下（基于使用lock-record重入计数的情况）："><a href="#3-轻量级锁解锁流程如下（基于使用lock-record重入计数的情况）：" class="headerlink" title="3.轻量级锁解锁流程如下（基于使用lock record重入计数的情况）："></a>3.轻量级锁解锁流程如下（基于使用lock record重入计数的情况）：</h3><ol>
+<li>遍历栈的Lock Record，如果_displaced_header 为 NULL，表明锁是可重入的，跳过不作处理</li>
+<li>如果_displaced_header 不为 NULL，即最后一个锁记录，调用 CAS 将 _displaced_header 恢复到当前对象头，解锁成功</li>
+</ol>
+<h3 id="偏向锁"><a href="#偏向锁" class="headerlink" title="偏向锁"></a>偏向锁</h3><blockquote>
+<p>It also follows the principle of optimizing com- mon cases. The observation exploited is the biased distri- bution of lockers called thread locality. That is, for a given object, the lock tends to be dominantly acquired and re- leased by a specific thread, which is obviously the case in single-threaded applications [2]</p>
+</blockquote>
+<p>根据观察结果来看，多线程下很多时候会出现以下情况：一个线程在频繁的释放和加锁；即多线程实际上已经退化成了单线程线性运行，在这种情况下，减少 CAS 这种原子操作，也能提高性能。偏向锁的原理是为线程保留锁，Mark Word 中存储 ThreadId，只有第一次需要进行 CAS 操作将这个字段设置为当前线程的线程ID，后续加锁的时候只需要查看 ThreadId 是否指向自己，而轻量级锁每次锁字段都需要进行 CAS 操作。</p>
+<h4 id="1-偏向锁加锁流程如下："><a href="#1-偏向锁加锁流程如下：" class="headerlink" title="1.偏向锁加锁流程如下："></a>1.偏向锁加锁流程如下：</h4><ol>
+<li>检查锁是否可偏向，对象头低位倒数第三位为1（即后三位的值为 0x5）表明可偏向</li>
+<li>如果可偏向，首先判断 Mark Word 的内容是否是当前线程ID,<br> 2.1 是，执行同步代码<br>  2.2 不是，执行  CAS 将 Mark Word 的高位设置为当前线程ID, CAS 执行分以下情况：<br> 2.2.1 执行成功，则加锁成功<br> 2.2.2 执行失败，说明此锁已经偏向了其他线程，因为产生了竞争所以撤销偏向锁，进入轻量级锁加锁流程</li>
+</ol>
+<p><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220719090554869-1523118210.png"></p>
+<center>偏向锁加锁流程</center>
+
+<h4 id="2-偏向锁与-HashCode-的关系"><a href="#2-偏向锁与-HashCode-的关系" class="headerlink" title="2.偏向锁与 HashCode 的关系"></a>2.偏向锁与 HashCode 的关系</h4><p>由于Hash码必须是唯一的，即 hashcode() 方法只能被调用一次，因此产生了以下规则来保证hash code 的唯一性：</p>
+<ol>
+<li>HashCode 是懒加载，当调用 hashcode() 方法的时候，生成的 hash code 才会保存到对象头指定位置</li>
+<li>当一个对象已经调用过 hashcode() 方法，那么偏向锁状态会置为0，无法进入偏向锁状态，直接进入轻量级锁</li>
+<li>如果一个对象现在已经处于偏向锁状态，在同步代码块中需要执行 hashcode() 方法，则偏向锁会撤销，进入重量级锁</li>
+</ol>
+<h4 id="3-偏向锁状态下-Mark-World-的情况"><a href="#3-偏向锁状态下-Mark-World-的情况" class="headerlink" title="3.偏向锁状态下 Mark World 的情况"></a>3.偏向锁状态下 Mark World 的情况</h4><p>在无锁状态下，如果没有调用 hashcode() ，高 25 位未使用，如果调用过 hashcode()，则保存的是 hash code，只有当高 25 位未使用时，才能进入偏向锁，mark word 保存获取到锁的线程ID，当锁撤销的时候，恢复为无锁状态，即高 25 位为 NULL。</p>
+<p><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220719102257913-681094877.png"></p>
+<center>偏向锁</center>
+
+<h4 id="4-偏向锁的可重入"><a href="#4-偏向锁的可重入" class="headerlink" title="4.偏向锁的可重入"></a>4.偏向锁的可重入</h4><p>在一些博客中发现以下说法：使用偏向锁时，每重入一次创建一个Lock Record。这个说法毫无疑问是错误的，偏向锁在重入的时候只检查 ThreadId，是自己的线程 Id 就可以执行同步代码块；解锁则只需要看是否是偏向模式，因此完全没有必要进行重入计数，生成 Lock Record 来计数就更没有这个必要了。</p>
+<h4 id="5-什么时候偏向锁不可用"><a href="#5-什么时候偏向锁不可用" class="headerlink" title="5.什么时候偏向锁不可用"></a>5.什么时候偏向锁不可用</h4><ol>
+<li>升级为轻量级锁之后，当一个线程持有锁，另一个线程来竞争锁的时候 CAS 失败，就会将低三位 101 设置为 001，即不可偏向，这也是锁可升级不可降级的原因。</li>
+<li>发生了批量撤销后，就不会再进入偏向锁了</li>
+</ol>
+<h4 id="6-JDK-15-偏向锁已经被禁用"><a href="#6-JDK-15-偏向锁已经被禁用" class="headerlink" title="6.JDK 15 偏向锁已经被禁用"></a>6.JDK 15 偏向锁已经被禁用</h4><p>JDK 15 开始默认不使用偏向锁，且相关的命令行指令被标记为过时<br><img src="https://img2022.cnblogs.com/blog/1409544/202207/1409544-20220720090650550-38275808.png"></p>
+<blockquote>
+<p>Biased locking introduced a lot of complex code into the synchronization subsystem and is invasive to other HotSpot components as well. This complexity is a barrier to understanding various parts of the code and an impediment to making significant design changes within the synchronization subsystem. To that end we would like to disable, deprecate, and eventually remove support for biased locking.[3]</p>
+</blockquote>
+<p>偏向锁在同步子系统中引入了许多复杂的代码，并且还侵入了其他 HotSpot 组件。这种复杂性造成了对代码各个部分的理解障碍，也阻碍了同步子系统进行重大设计更改。为此，我们希望禁用、弃用并最终移除对偏向锁的支持。</p>
+<h3 id="偏向锁的撤销"><a href="#偏向锁的撤销" class="headerlink" title="偏向锁的撤销"></a>偏向锁的撤销</h3><h4 id="1-何为撤销？"><a href="#1-何为撤销？" class="headerlink" title="1.何为撤销？"></a>1.何为撤销？</h4><p>撤销是指当对象处于偏向锁模式的时候，不再使用偏向锁，且标记不可偏向（低位 001）；注意撤销不是常规意义上的解锁，偏向锁的解锁是当锁处于偏向锁状态时，同步块执行完毕，需要对锁进行释放，只需要检查是否处于已偏向（此处检查两个参数，一是偏向位即低位倒数第三位为1，为 1 即表示可偏向也可表示已偏向，故还需要检查 ThreadID 不为空），如果处于偏向锁模式，则直接 return 释放锁成功。撤销与解锁的区别是撤销需要将偏向锁标识位置为0，标记该对象不可偏向。<br>撤销操作不是必须在安全点操作，首先会尝试在不安全点使用 CAS 操作修改 Mark Word 为无锁状态，如果尝试失败会等待在安全点（JVM 概念）撤销，等待安全点的操作开销很大，即需要STW。</p>
+<h4 id="2-触发撤销的条件"><a href="#2-触发撤销的条件" class="headerlink" title="2.触发撤销的条件"></a>2.触发撤销的条件</h4><ol>
+<li>线程 A 首先获取了偏向锁，此时来了线程 B 尝试对锁偏向，发现锁已经被偏向 A 线程，B 线程会触发锁的偏向撤销并进一步膨胀成轻量级锁。</li>
+<li>触发了批量撤销</li>
+<li>调用 wait()&#x2F;notify() 触发重量级锁</li>
+</ol>
+<h4 id="3-什么是批量重偏向"><a href="#3-什么是批量重偏向" class="headerlink" title="3. 什么是批量重偏向"></a>3. 什么是批量重偏向</h4><p>当一个类产生了大量对象，在线程 A 访问这些对象时，所有对象偏向A，线程 A 释放锁后，线程 B 访问这些所有对象，每个对象都会触发锁的撤销升级成轻量级锁，这个撤销的次数达到一定阈值（默认20次），JVM 就会把该类产生的所有对象的偏向状态偏向到 B，这就是批量重偏向。批量重偏向的重点即避免进入轻量级锁，由于 A B的竞争导致多个对象都进入了轻量级锁，而通过撤销的阈值判断发现大多数线程都偏向了 B，那么只需要将此类的所有对象都修改成偏向 B 就可以大概率的避免进入轻量级锁。<br>举个例子：一个类一共生成了30个对象，A 线程访问了 30 个，这 30 个对象都偏向 A，接着 B 只访问了 25 个对象，前20个对象都由于竞争升级成了轻量级锁，由于超过阈值 20 触发了批量重偏向，后续 10 个对象的偏向线程 ID 也被修改为线程 B，线程 B 访问第 21 个之后的对象都只需要使用偏向锁，无需使用轻量级锁。</p>
+<h4 id="4-批量撤销"><a href="#4-批量撤销" class="headerlink" title="4. 批量撤销"></a>4. 批量撤销</h4><p>与批量重偏向同理，都是某个类的对象频繁撤销锁偏向，撤销次数达到一定阈值（默认40次），就会触发以下操作：将次类的对象的偏向锁标记置为 0，即锁不再可偏向，新建的对象也是不可偏向的，若再次发生锁竞争，直接进入轻量级锁。<br>可以看到，批量重偏向和批量撤销的操作是都是对撤销操作的优化，批量重偏向是第一阶段的优化，批量撤销是在第一阶段优化没有奏效的情况下第二阶段的优化，所以很明显，批量撤销的阈值应该设置的比批量重偏向的大。</p>
+<h3 id="三、结语"><a href="#三、结语" class="headerlink" title="三、结语"></a>三、结语</h3><p>Synchronized 的原理和优化就暂且讲到这，两篇文章主要都是对概念的介绍、各个状态的锁的结构介绍和阐述简化后的流程。还有诸多细节没有进行叙述，例如重量级锁就没有讲到重入、锁膨胀的过程、偏向撤销的流程、串联起来整个加锁的流程，如此种种细节皆略过了，一是精力有限，二是水平有限（个人拙见，要理清这些细节和流程必须自己亲自看源码，然现阶段读 C ++ 源码略为吃力），故而等后续有更多的理解后再补充。文中必然有疏漏或是错误，若有发现，还请海涵并指正。</p>
+<h1 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h1><p>[1] Evaluating and improving biased locking in the HotSpot virtual machine.<br>[2] Lock Reservation: Java Locks Can Mostly Do Without Atomic Operations<br>[3] [JEP 374: Deprecate and Disable Biased Locking]: <a target="_blank" rel="noopener" href="https://openjdk.org/jeps/374">https://openjdk.org/jeps/374</a></p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta">文章作者: </span><span class="post-copyright-info"><a href="http://ashleyye.top">joywu</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta">文章链接: </span><span class="post-copyright-info"><a href="http://ashleyye.top/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%BA%8C%EF%BC%89%E2%80%94%E2%80%94%20Synchronized%20%E5%8A%A0%E9%94%81%E8%A7%A3%E9%94%81%E6%B5%81%E7%A8%8B/">http://ashleyye.top/2023/06/27/多线程与高并发（二）—— Synchronized 加锁解锁流程/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta">版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="http://ashleyye.top" target="_blank">Ashley的个人博客空间</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"></div><div class="post_share"><div class="social-share" data-image="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><div class="post-reward"><div class="reward-button"><i class="fas fa-qrcode"></i> 打赏</div><div class="reward-main"><ul class="reward-all"><li class="reward-item"><a href="/img/wechat.png" target="_blank"><img class="post-qr-code-img" src="/img/wechat.png" alt="微信"/></a><div class="post-qr-code-desc">微信</div></li><li class="reward-item"><a href="/img/alipay.jpg" target="_blank"><img class="post-qr-code-img" src="/img/alipay.jpg" alt="支付宝"/></a><div class="post-qr-code-desc">支付宝</div></li></ul></div></div><nav class="pagination-post" id="pagination"><div class="prev-post pull-left"><a href="/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%B8%89%EF%BC%89%E2%80%94%E2%80%94%20%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90%20AQS%20%E5%8E%9F%E7%90%86/" title=""><div class="cover" style="background: var(--default-bg-color)"></div><div class="pagination-info"><div class="label">上一篇</div><div class="prev_info"></div></div></a></div><div class="next-post pull-right"><a href="/2023/06/27/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%EF%BC%88%E4%B8%80%EF%BC%89%E2%80%94%E2%80%94%20%E8%BF%9B%E7%A8%8B%E5%90%8C%E6%AD%A5/" title=""><div class="cover" style="background: var(--default-bg-color)"></div><div class="pagination-info"><div class="label">下一篇</div><div class="next_info"></div></div></a></div></nav></div><div class="aside-content" id="aside-content"><div class="card-widget card-info"><div class="is-center"><div class="avatar-img"><img src="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info__name">joywu</div><div class="author-info__description">余生有你,幸莫大焉</div></div><div class="card-info-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">13</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">10</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">1</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://gitee.com/wzl0258"><i class="fab fa-github"></i><span>Follow Me</span></a><div class="card-info-social-icons is-center"><a class="social-icon" href="https://gitee.com/wzl0258" target="_blank" title="Gitee"><i class="fab fa-github"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">This is my Blog</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%89%8D%E8%A8%80"><span class="toc-number">1.</span> <span class="toc-text">前言</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#Synchronized-%E9%94%81%E7%9A%84%E7%BB%86%E8%8A%82"><span class="toc-number">1.1.</span> <span class="toc-text">Synchronized 锁的细节</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E8%87%AA%E6%97%8B%E9%94%81"><span class="toc-number">1.1.1.</span> <span class="toc-text">一、自旋锁</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%BA%8C%E3%80%81%E8%BD%BB%E9%87%8F%E7%BA%A7%E9%94%81"><span class="toc-number">1.1.2.</span> <span class="toc-text">二、轻量级锁</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E8%BD%BB%E9%87%8F%E7%BA%A7%E9%94%81%E5%8A%A0%E9%94%81%E6%B5%81%E7%A8%8B"><span class="toc-number">1.1.2.1.</span> <span class="toc-text">1.轻量级锁加锁流程</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-%E8%BD%BB%E9%87%8F%E7%BA%A7%E9%94%81%E9%87%8D%E5%85%A5%E7%9A%84%E7%96%91%E9%97%AE"><span class="toc-number">1.1.2.2.</span> <span class="toc-text">2.轻量级锁重入的疑问</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#3-%E8%BD%BB%E9%87%8F%E7%BA%A7%E9%94%81%E8%A7%A3%E9%94%81%E6%B5%81%E7%A8%8B%E5%A6%82%E4%B8%8B%EF%BC%88%E5%9F%BA%E4%BA%8E%E4%BD%BF%E7%94%A8lock-record%E9%87%8D%E5%85%A5%E8%AE%A1%E6%95%B0%E7%9A%84%E6%83%85%E5%86%B5%EF%BC%89%EF%BC%9A"><span class="toc-number">1.1.3.</span> <span class="toc-text">3.轻量级锁解锁流程如下（基于使用lock record重入计数的情况）：</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%81%8F%E5%90%91%E9%94%81"><span class="toc-number">1.1.4.</span> <span class="toc-text">偏向锁</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E5%81%8F%E5%90%91%E9%94%81%E5%8A%A0%E9%94%81%E6%B5%81%E7%A8%8B%E5%A6%82%E4%B8%8B%EF%BC%9A"><span class="toc-number">1.1.4.1.</span> <span class="toc-text">1.偏向锁加锁流程如下：</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-%E5%81%8F%E5%90%91%E9%94%81%E4%B8%8E-HashCode-%E7%9A%84%E5%85%B3%E7%B3%BB"><span class="toc-number">1.1.4.2.</span> <span class="toc-text">2.偏向锁与 HashCode 的关系</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#3-%E5%81%8F%E5%90%91%E9%94%81%E7%8A%B6%E6%80%81%E4%B8%8B-Mark-World-%E7%9A%84%E6%83%85%E5%86%B5"><span class="toc-number">1.1.4.3.</span> <span class="toc-text">3.偏向锁状态下 Mark World 的情况</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#4-%E5%81%8F%E5%90%91%E9%94%81%E7%9A%84%E5%8F%AF%E9%87%8D%E5%85%A5"><span class="toc-number">1.1.4.4.</span> <span class="toc-text">4.偏向锁的可重入</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#5-%E4%BB%80%E4%B9%88%E6%97%B6%E5%80%99%E5%81%8F%E5%90%91%E9%94%81%E4%B8%8D%E5%8F%AF%E7%94%A8"><span class="toc-number">1.1.4.5.</span> <span class="toc-text">5.什么时候偏向锁不可用</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#6-JDK-15-%E5%81%8F%E5%90%91%E9%94%81%E5%B7%B2%E7%BB%8F%E8%A2%AB%E7%A6%81%E7%94%A8"><span class="toc-number">1.1.4.6.</span> <span class="toc-text">6.JDK 15 偏向锁已经被禁用</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%81%8F%E5%90%91%E9%94%81%E7%9A%84%E6%92%A4%E9%94%80"><span class="toc-number">1.1.5.</span> <span class="toc-text">偏向锁的撤销</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-%E4%BD%95%E4%B8%BA%E6%92%A4%E9%94%80%EF%BC%9F"><span class="toc-number">1.1.5.1.</span> <span class="toc-text">1.何为撤销？</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-%E8%A7%A6%E5%8F%91%E6%92%A4%E9%94%80%E7%9A%84%E6%9D%A1%E4%BB%B6"><span class="toc-number">1.1.5.2.</span> <span class="toc-text">2.触发撤销的条件</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#3-%E4%BB%80%E4%B9%88%E6%98%AF%E6%89%B9%E9%87%8F%E9%87%8D%E5%81%8F%E5%90%91"><span class="toc-number">1.1.5.3.</span> <span class="toc-text">3. 什么是批量重偏向</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#4-%E6%89%B9%E9%87%8F%E6%92%A4%E9%94%80"><span class="toc-number">1.1.5.4.</span> <span class="toc-text">4. 批量撤销</span></a></li></ol></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E4%B8%89%E3%80%81%E7%BB%93%E8%AF%AD"><span class="toc-number">1.1.6.</span> <span class="toc-text">三、结语</span></a></li></ol></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#Reference"><span class="toc-number">2.</span> <span class="toc-text">Reference</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%B8%80%EF%BC%89%E2%80%94%E2%80%94%20%E8%87%AA%E9%A1%B6%E5%90%91%E4%B8%8B%E7%90%86%E8%A7%A3Synchronized%E5%AE%9E%E7%8E%B0%E5%8E%9F%E7%90%86/" title="无题">无题</a><time datetime="2023-06-27T13:21:01.523Z" title="发表于 2023-06-27 21:21:01">2023-06-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%BA%94%EF%BC%89%E2%80%94%E2%80%94%20%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90%20ReentrantLock/" title="无题">无题</a><time datetime="2023-06-27T13:21:01.521Z" title="发表于 2023-06-27 21:21:01">2023-06-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E5%9B%9B%EF%BC%89%E2%80%94%E2%80%94%20%E6%A0%B9%E6%8D%AE%20HotSpot%20%E6%BA%90%E7%A0%81%E8%AE%B2%E9%80%8F%20Java%20%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6/" title="无题">无题</a><time datetime="2023-06-27T13:21:01.516Z" title="发表于 2023-06-27 21:21:01">2023-06-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%B8%89%EF%BC%89%E2%80%94%E2%80%94%20%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90%20AQS%20%E5%8E%9F%E7%90%86/" title="无题">无题</a><time datetime="2023-06-27T13:21:01.513Z" title="发表于 2023-06-27 21:21:01">2023-06-27</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/06/27/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%EF%BC%88%E4%BA%8C%EF%BC%89%E2%80%94%E2%80%94%20Synchronized%20%E5%8A%A0%E9%94%81%E8%A7%A3%E9%94%81%E6%B5%81%E7%A8%8B/" title="无题">无题</a><time datetime="2023-06-27T13:21:01.510Z" title="发表于 2023-06-27 21:21:01">2023-06-27</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="copyright">&copy;2020 - 2023 By joywu</div><div class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly</a></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="浅色和深色模式转换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside_config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js"></script><script src="/js/main.js"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.umd.min.js"></script><div class="js-pjax"></div><script id="canvas_nest" defer="defer" color="0,0,255" opacity="0.7" zIndex="-1" count="99" mobile="false" src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/canvas-nest.min.js"></script><script id="click-heart" src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/click-heart.min.js" async="async" mobile="false"></script><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="is-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据库加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div class="no-result" id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
