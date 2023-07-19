@@ -1,0 +1,321 @@
+<!DOCTYPE html><html lang="zh-CN" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>多线程与高并发三之AQS 原理探索 | Ashley的个人博客空间</title><meta name="author" content="joywu"><meta name="copyright" content="joywu"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="多线程与高并发三之AQS 原理探索一、前言AQS 是一个同步框架，关于同步在操作系统篇 中对进程同步做了些概念性的介绍，我们了解到进程（线程同理，本文基于 JVM 讲解，故下文只称线程）同步的工具有很多：Mutex、Semaphore、Monitor。但是Mutex 和 Semaphore 作为低级通信存在不少缺点，Monitor 机制解决了上面部分缺憾，但是仍然存在问题，AQS 的出现很好的解决">
+<meta property="og:type" content="article">
+<meta property="og:title" content="多线程与高并发三之AQS 原理探索">
+<meta property="og:url" content="http://ashleyye.top/2020/03/10/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%B8%89%E4%B9%8BAQS%20%E5%8E%9F%E7%90%86%E6%8E%A2%E7%B4%A2/index.html">
+<meta property="og:site_name" content="Ashley的个人博客空间">
+<meta property="og:description" content="多线程与高并发三之AQS 原理探索一、前言AQS 是一个同步框架，关于同步在操作系统篇 中对进程同步做了些概念性的介绍，我们了解到进程（线程同理，本文基于 JVM 讲解，故下文只称线程）同步的工具有很多：Mutex、Semaphore、Monitor。但是Mutex 和 Semaphore 作为低级通信存在不少缺点，Monitor 机制解决了上面部分缺憾，但是仍然存在问题，AQS 的出现很好的解决">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png">
+<meta property="article:published_time" content="2020-03-10T12:05:34.000Z">
+<meta property="article:modified_time" content="2023-06-28T06:00:29.647Z">
+<meta property="article:author" content="joywu">
+<meta property="article:tag" content="多线程">
+<meta property="article:tag" content="线程池">
+<meta property="article:tag" content="AQS">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png"><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="http://ashleyye.top/2020/03/10/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%B8%89%E4%B9%8BAQS%20%E5%8E%9F%E7%90%86%E6%8E%A2%E7%B4%A2/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="stylesheet" href="/css/index.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" media="print" onload="this.media='all'"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.min.css" media="print" onload="this.media='all'"><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"languages":{"hits_empty":"找不到您查询的内容：${query}","hits_stats":"共找到 ${hits} 篇文章"}},
+  translate: undefined,
+  noticeOutdate: undefined,
+  highlight: {"plugin":"highlighjs","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false},
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: '刚刚',
+    min: '分钟前',
+    hour: '小时前',
+    day: '天前',
+    month: '个月前'
+  },
+  copyright: undefined,
+  lightbox: 'fancybox',
+  Snackbar: undefined,
+  source: {
+    justifiedGallery: {
+      js: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.js',
+      css: 'https://cdn.jsdelivr.net/npm/flickr-justified-gallery/dist/fjGallery.min.css'
+    }
+  },
+  isPhotoFigcaption: false,
+  islazyload: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: '多线程与高并发三之AQS 原理探索',
+  isPost: true,
+  isHome: false,
+  isHighlightShrink: false,
+  isToc: true,
+  postUpdate: '2023-06-28 14:00:29'
+}</script><noscript><style type="text/css">
+  #nav {
+    opacity: 1
+  }
+  .justified-gallery img {
+    opacity: 1
+  }
+
+  #recent-posts time,
+  #post-meta time {
+    display: inline !important
+  }
+</style></noscript><script>(win=>{
+    win.saveToLocal = {
+      set: function setWithExpiry(key, value, ttl) {
+        if (ttl === 0) return
+        const now = new Date()
+        const expiryDay = ttl * 86400000
+        const item = {
+          value: value,
+          expiry: now.getTime() + expiryDay,
+        }
+        localStorage.setItem(key, JSON.stringify(item))
+      },
+
+      get: function getWithExpiry(key) {
+        const itemStr = localStorage.getItem(key)
+
+        if (!itemStr) {
+          return undefined
+        }
+        const item = JSON.parse(itemStr)
+        const now = new Date()
+
+        if (now.getTime() > item.expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return item.value
+      }
+    }
+  
+    win.getScript = url => new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = url
+      script.async = true
+      script.onerror = reject
+      script.onload = script.onreadystatechange = function() {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        script.onload = script.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(script)
+    })
+  
+    win.getCSS = (url,id = false) => new Promise((resolve, reject) => {
+      const link = document.createElement('link')
+      link.rel = 'stylesheet'
+      link.href = url
+      if (id) link.id = id
+      link.onerror = reject
+      link.onload = link.onreadystatechange = function() {
+        const loadState = this.readyState
+        if (loadState && loadState !== 'loaded' && loadState !== 'complete') return
+        link.onload = link.onreadystatechange = null
+        resolve()
+      }
+      document.head.appendChild(link)
+    })
+  
+      win.activateDarkMode = function () {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      win.activateLightMode = function () {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+      const t = saveToLocal.get('theme')
+    
+          if (t === 'dark') activateDarkMode()
+          else if (t === 'light') activateLightMode()
+        
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        if (asideStatus === 'hide') {
+          document.documentElement.classList.add('hide-aside')
+        } else {
+          document.documentElement.classList.remove('hide-aside')
+        }
+      }
+    
+    const detectApple = () => {
+      if(/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)){
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+    })(window)</script><link rel="stylesheet" href="/css/background.css"></head><body><div id="web_bg"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img is-center"><img src="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png" onerror="onerror=null;src='/img/friend_404.gif'" alt="avatar"/></div><div class="sidebar-site-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">36</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">17</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">5</div></a></div><hr class="custom-hr"/><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fa fa-graduation-cap"></i><span> 博文</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/categories/"><i class="fa-fw fa fa-archive"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fa fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/archives/"><i class="fa-fw fa fa-folder-open"></i><span> 归档</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于笔者</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a href="/" title="Ashley的个人博客空间"><span class="site-name">Ashley的个人博客空间</span></a></span><div id="menus"><div id="search-button"><a class="site-page social-icon search" href="javascript:void(0);"><i class="fas fa-search fa-fw"></i><span> 搜索</span></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page group" href="javascript:void(0);"><i class="fa-fw fa fa-graduation-cap"></i><span> 博文</span><i class="fas fa-chevron-down"></i></a><ul class="menus_item_child"><li><a class="site-page child" href="/categories/"><i class="fa-fw fa fa-archive"></i><span> 分类</span></a></li><li><a class="site-page child" href="/tags/"><i class="fa-fw fa fa-tags"></i><span> 标签</span></a></li><li><a class="site-page child" href="/archives/"><i class="fa-fw fa fa-folder-open"></i><span> 归档</span></a></li></ul></div><div class="menus_item"><a class="site-page" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于笔者</span></a></div></div><div id="toggle-menu"><a class="site-page" href="javascript:void(0);"><i class="fas fa-bars fa-fw"></i></a></div></div></nav><div id="post-info"><h1 class="post-title">多线程与高并发三之AQS 原理探索</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">发表于</span><time class="post-meta-date-created" datetime="2020-03-10T12:05:34.000Z" title="发表于 2020-03-10 20:05:34">2020-03-10</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">更新于</span><time class="post-meta-date-updated" datetime="2023-06-28T06:00:29.647Z" title="更新于 2023-06-28 14:00:29">2023-06-28</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E6%8A%80%E6%9C%AF/">技术</a><i class="fas fa-angle-right post-meta-separator"></i><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/%E5%AD%A6%E4%B9%A0/">学习</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-wordcount"><i class="far fa-file-word fa-fw post-meta-icon"></i><span class="post-meta-label">字数总计:</span><span class="word-count">6.9k</span><span class="post-meta-separator">|</span><i class="far fa-clock fa-fw post-meta-icon"></i><span class="post-meta-label">阅读时长:</span><span>23分钟</span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="post-content" id="article-container"><h1 id="多线程与高并发三之AQS-原理探索"><a href="#多线程与高并发三之AQS-原理探索" class="headerlink" title="多线程与高并发三之AQS 原理探索"></a>多线程与高并发三之AQS 原理探索</h1><h1 id="一、前言"><a href="#一、前言" class="headerlink" title="一、前言"></a>一、前言</h1><p>AQS 是一个同步框架，关于同步在<a href="https://ashleyye.top/2020/03/08/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E5%88%9D%E6%AD%A5%E6%95%B4%E7%90%86/">操作系统篇</a> 中对进程同步做了些概念性的介绍，我们了解到进程（线程同理，本文基于 JVM 讲解，故下文只称线程）同步的工具有很多：Mutex、Semaphore、Monitor。但是Mutex 和 Semaphore 作为低级通信存在不少缺点，Monitor 机制解决了上面部分缺憾，但是仍然存在问题，AQS 的出现很好的解决了这些问题。</p>
+<h1 id="二、其他同步工具的缺点"><a href="#二、其他同步工具的缺点" class="headerlink" title="二、其他同步工具的缺点"></a>二、其他同步工具的缺点</h1><h2 id="Mutex"><a href="#Mutex" class="headerlink" title="Mutex"></a>Mutex</h2><ul>
+<li>Mutex 只有两种状态，锁定和非锁定，无法表示临界区的可用资源数量（计数信号量可解决）。</li>
+<li>使用复杂，使用不当易造成死锁</li>
+</ul>
+<h2 id="Semaphore"><a href="#Semaphore" class="headerlink" title="Semaphore"></a>Semaphore</h2><ul>
+<li>Mutex 只允许一个线程访问临界资源， Semaphore 允许一定数量的线程访问共享资源。但是 Semaphore 中没有 Owner，无法知道当前获取锁的线程是谁。</li>
+<li>使用复杂，使用不当易造成死锁，P V 操作需要配对使用，分散在代码各处增大了编码难度。</li>
+</ul>
+<h2 id="Monitor"><a href="#Monitor" class="headerlink" title="Monitor"></a>Monitor</h2><p>Monitor 解决了上述几个问题，但在 HotSpot 中底层是基于 Mutex 做的线程同步，在 1.6 之前且还没有进行优化，每次锁竞争都需要经历两次上下文切换严重影响性能。第二个问题是 HotSpot 实现的是精简的 Mesa 语义，不支持多个条件变量。</p>
+<h1 id="三、AQS-概述"><a href="#三、AQS-概述" class="headerlink" title="三、AQS 概述"></a>三、AQS 概述</h1><h2 id="什么是-AQS-？"><a href="#什么是-AQS-？" class="headerlink" title="什么是 AQS ？"></a>什么是 AQS ？</h2><p>AQS 即一个类，java.util.concurrent.AbstractQueuedSynchronized.Class，这个类作为一个构造同步器的框架。AQS 本身并不提供 API 给程序员用于直接的同步控制，它是一个抽象类，通过实现它的抽象方法来构建同步工具，如 ReentrantLock、CountDownLatch 等。也就是说它不是一个面向业务开发使用的工具，是构建同步器所复用的一套机制抽取出来形成的框架，这个框架我们自己也可以通过实现它的抽象方法来构建自己的同步器。</p>
+<h2 id="AQS-做了什么事？"><a href="#AQS-做了什么事？" class="headerlink" title="AQS 做了什么事？"></a>AQS 做了什么事？</h2><p>其实通过观察同步器的各种实现都是相似的，我们会发现锁的实现通常需要以下三要素：</p>
+<ul>
+<li>状态管理</li>
+<li>加锁解锁操作</li>
+<li>线程等待</li>
+</ul>
+<p>状态管理在信号量中是整型值，在 Mutex 中就是 Owner，在 Synchronized (Monitor) 中也是 Owner，这些机制都有对应的操作来加锁和解锁，通常加锁&#x2F;解锁操作也对应着线程的阻塞（等待）&#x2F;唤醒，这些线程没有获取到锁后需要等待，有的实现是自旋，有的实现是挂起。不论是 Synchronized 还是 AQS 都有等待队列供未获取到锁的线程进入，直到锁释放。<br>同理，AQS 所做的主要的三件事也就是上面三件，只是每一项的实现细节可能不同，支持的功能更广泛。</p>
+<ul>
+<li>状态的原子性管理</li>
+<li>加锁&#x2F;解锁操作</li>
+<li>队列管理（线程阻塞入队&#x2F;唤醒出队）</li>
+</ul>
+<p>下文会先列出 AQS 的设计，也就是实现了哪些特性，接下来就会通过看源码和图示来了解这些设计的具体实现。</p>
+<h2 id="AQS-设计"><a href="#AQS-设计" class="headerlink" title="AQS 设计"></a>AQS 设计</h2><ul>
+<li>阻塞和非阻塞</li>
+<li>可选超时设置，在超时后放弃等待锁</li>
+<li>锁可中断</li>
+<li>独占和共享模式</li>
+</ul>
+<p>独占模式即同一时刻只能有一个线程可以通过阻塞点，共享模式下可以同时有多个线程在执行。<br>以上都是 AQS 需要支持的功能，基于模板模式的设计，AQS 提供了以下方法供子类继承重新实现：</p>
+<p><img src="/img/1409544-20220725152255223-1925544749.png"></p>
+<ul>
+<li>tryAcquire()&#x2F;tryRelease() 为独占模式下的加锁解锁操作</li>
+<li>tryAcquireShared()&#x2F;tryReleaseShared() 为共享模式下的加锁解锁操作</li>
+<li>isHeldExclusively() 表明锁是否为独占模式，即当前线程是否独占资源。</li>
+</ul>
+<h1 id="四、AQS-原理"><a href="#四、AQS-原理" class="headerlink" title="四、AQS 原理"></a>四、AQS 原理</h1><h2 id="原理概括"><a href="#原理概括" class="headerlink" title="原理概括"></a>原理概括</h2><p>关于同步器的实现思路，首先需要有一个状态来标明锁是否可用，在 AQS 的实现中，其维护了一个变量 state，这个变量使用 volatile 关键字进行标识，保证其在线程之间的可见性。加锁解锁操作简化来看就是只需要把这个状态更改，且标明当前线程占有锁。在独占模式下，加锁操作必须互斥，也就是在同一时刻只能有一个线程加锁成功，AQS 使用 CAS 原子指令来保证 State 的互斥访问。在一个线程成功加锁（改变锁的状态 State 的值，该值具体如何改变取决于同步工具如何实现）之后，其他线程尝试 CAS 则会加锁失败，那么加锁失败的线程该如何呢？这些线程可以自旋等待或者阻塞，AQS 提供 CLH 队列将这些阻塞的线程管理起来，CLH 是一个先进先出的队列，加锁失败的线程会被进入队列阻塞。因此加锁和解锁操作并不仅仅是简单的修改锁状态，在这之后还需要维护队列。AQS 的主要原理也就是围绕着队列进行入，加锁解锁功能由继承 AQS 的同步工具实现，在调用加锁操作之后，AQS 来维护线程入队，并且将线程阻塞，在调用解锁操作后，AQS 将队列中的线程按规则出队并且唤醒。</p>
+<h2 id="Node-设计"><a href="#Node-设计" class="headerlink" title="Node 设计"></a>Node 设计</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">static final class Node &#123;</span><br><span class="line"></span><br><span class="line">        static final Node SHARED = new Node();  // 共享模式下的节点</span><br><span class="line"></span><br><span class="line">        static final Node EXCLUSIVE = null; // 独占模式下的节点</span><br><span class="line"></span><br><span class="line">        static final int CANCELLED =  1; // 被取消了的状态</span><br><span class="line"> </span><br><span class="line">        static final int SIGNAL    = -1; // 处于park() 状态等待被unpark()唤醒的状态</span><br><span class="line"></span><br><span class="line">        static final int CONDITION = -2; // 处于等待 condition 的状态</span><br><span class="line">   </span><br><span class="line">        static final int PROPAGATE = -3; // 共享模式下需要继续传播的状态</span><br><span class="line"></span><br><span class="line">        volatile int waitStatus; // 当前节点的状态</span><br><span class="line"></span><br><span class="line">        volatile Node prev; // 前驱节点指针</span><br><span class="line"></span><br><span class="line">        volatile Node next; // 后继节点指针</span><br><span class="line"></span><br><span class="line">        volatile Thread thread; // 抢占锁的线程</span><br><span class="line"></span><br><span class="line">        Node nextWaiter; // 指向下一个也处于等待的节点</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>上面提到 AQS 有一个阻塞队列，这个队列的具体实现是双向链表，队列中的节点是对线程进行封装后的 Node 类，这个类的每个字段含义如下：</p>
+<ol>
+<li>节点状态，即节点的 waitStatus 值</li>
+</ol>
+<ul>
+<li>CANCELLED  当前节点因为超时或者被打断而取消，处于这个状态的节点永远不会被阻塞</li>
+<li>SIGNAL 当前节点的前驱节点被阻塞或者即将被阻塞，所以当前节点必须在释放或者取消的时候对其unpark()</li>
+<li>CONDITION 当前节点处于 Condition 队列等待，Condition 队列不是 AQS 中的 CLH 队列，这个状态不是用于 CLH 队列的，只有当该节点从 Condition 转移到 CLH 中时，这个状态才会生效（详细内容见下一篇章 ReentrantLock）。</li>
+<li>PROPAGATE 共享状态下对锁释放的时候需要释放所有获取锁的节点，因而需要这个状态表明还需要继续释放</li>
+<li>0 这个值也是waitStatus 的值，没有进行常量定义，其含义为不是以上值</li>
+</ul>
+<ol start="2">
+<li>waitStatus 即当前线程现在的状态，值就是上面列出的这些</li>
+<li>nextWaiter 是 Condition 中指出下一个也处于等待队列的节点</li>
+</ol>
+<h1 id="五、源码分析"><a href="#五、源码分析" class="headerlink" title="五、源码分析"></a>五、源码分析</h1><p>为了更好的讲解原理，下面直接模拟线程竞争锁的场景来进行分析，我们首先看两个线程在独占锁模式下加锁和解锁的源码，再看共享模式下的场景。</p>
+<h2 id="独占模式加锁"><a href="#独占模式加锁" class="headerlink" title="独占模式加锁"></a>独占模式加锁</h2><p>场景：线程 T1 和线程 T2 竞争锁</p>
+<h4 id="1-acquire-int-arg"><a href="#1-acquire-int-arg" class="headerlink" title="1. acquire(int arg)"></a>1. acquire(int arg)</h4><p>acquire(int arg) 是独占模式下加锁的入口方法</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">public final void acquire(int arg) &#123;</span><br><span class="line">        // tryAcquire(arg) 是继承 AQS 实现在独占模式下的同步工具需要重写的方法。当这个方法返回true，就表示当前线程获得了锁。</span><br><span class="line">        if (!tryAcquire(arg) &amp;&amp;</span><br><span class="line">            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))</span><br><span class="line">            selfInterrupt();</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>流程如下：</p>
+<ol>
+<li>线程 T1 和线程 T2 同时要执行临界区，在执行临界区之前需要进行加锁操作，也就是同步工具实现的加锁方法，加锁方法最终会走到 AQS 的 acquire(int arg) 方法；</li>
+<li>此时，两个线程同时首先都执行 tryAcquire(arg) 操作，该方法在重写的时候通过 CAS 设置状态 State 的值，CAS 保证只能有一个线程成功执行，即只有一个线程能加锁成功，假设线程 T1 加锁成功。</li>
+<li>线程 T1 执行 tryAcquire(arg) 加锁成功，!tryAcquire(arg) 取反操作后 T1 线程不必执行后续逻辑，即加锁成功，开始执行临界区</li>
+<li>此时线程 T2 执行 tryAcquire(arg) 必然失败 （由于 State 的值被修改过，执行 CAS 失败即加锁不成功）</li>
+<li>tryAcquire(arg) 返回false , 取反后为 true ，执行 <strong>acquireQueued(addWaiter(Node.EXCLUSIVE), arg))</strong></li>
+<li>acquireQueued() 的结果方法分四种情况（具体情况见这个方法的解析），总之最后会返回一个标记表明当前线程是否需要被打断，如果为true，则调用 <strong>selfInterrupt()</strong> 再次设置打断标记</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">static void selfInterrupt() &#123;</span><br><span class="line">        Thread.currentThread().interrupt();</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<h4 id="2-addWaiter-Node-mode"><a href="#2-addWaiter-Node-mode" class="headerlink" title="2. addWaiter(Node mode)"></a>2. addWaiter(Node mode)</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line">private Node addWaiter(Node mode) &#123;</span><br><span class="line">        // 根据当前线程实例化一个独占式的 Node</span><br><span class="line">        Node node = new Node(Thread.currentThread(), mode);</span><br><span class="line">        // Try the fast path of enq; backup to full enq on failure</span><br><span class="line">        /**</span><br><span class="line">         * 1. 将尾部赋给一个临时变量，注意此时tail为空，因为tail此时还没有指向Node对象</span><br><span class="line">         * 2. tail == null，因此执行 enq(node) 方法，这个node是创建的当前线程的node</span><br><span class="line">         */</span><br><span class="line">        Node pred = tail;</span><br><span class="line">        if (pred != null) &#123;</span><br><span class="line">            node.prev = pred;</span><br><span class="line">            // 这个CAS方法的含义是，判断当前AQS的尾部节点是pred，如果是则重新设置为当前node</span><br><span class="line">            // 设定成功，则退出</span><br><span class="line">            if (compareAndSetTail(pred, node)) &#123;</span><br><span class="line">                pred.next = node;</span><br><span class="line">                return node;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        // 如果挂载队尾节点也存在竞争 则使用无限CAS自旋方式设置队尾</span><br><span class="line">        enq(node);</span><br><span class="line">        return node;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>对上述流程第4点拆解来看，T2 首先要执行addWaiter(Node.EXCLUSIVE)进行入队，我们看下执行流程：</p>
+<ol>
+<li>根据当前线程实例化一个独占式的 Node</li>
+<li>将尾部赋给一个临时变量，看官方注释，该指针是懒加载的，在执行enq()方法新入一个节点的时候 tail 才有值，所以此时为 NULL<br><img src="/img/1409544-20220726162801179-1277949497.png"></li>
+<li>tail &#x3D;&#x3D; null，因此执行 enq(node) 方法进行当前节点入队操作，入队成功后返回该节点。<br>当队列中的节点大于一个时，也就是有实际节点的时候，tail 指针是不为空的，那么在调用 enq 入队之前会尝试一次快速入队，如果失败表明入队也有竞争，才会进入 enq() 方法</li>
+</ol>
+<h4 id="3-enq-final-Node-node"><a href="#3-enq-final-Node-node" class="headerlink" title="3. enq(final Node node)"></a>3. enq(final Node node)</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">private Node enq(final Node node) &#123;</span><br><span class="line">        // 死循环判断</span><br><span class="line">        for (;;) &#123;</span><br><span class="line">            /**</span><br><span class="line">             * 第一次循环：</span><br><span class="line">             *  tail赋值给临时变量t， 注意此时tail仍然是null, 进入if块</span><br><span class="line">             * 调用compareAndSetHead(new Node()) 创建了一个新的节点 ，这个节点的结构如下：</span><br><span class="line">             *         Node() &#123;    // Used to establish initial head or SHARED marker</span><br><span class="line">             *         &#125;</span><br><span class="line">             *   该节点中的线程为 NULL，也就是我们下文所称的哑节点</span><br><span class="line">             *   此时队列里有了第一个Node</span><br><span class="line">             */</span><br><span class="line">            Node t = tail;</span><br><span class="line">            if (t == null) &#123; // Must initialize</span><br><span class="line">                if (compareAndSetHead(new Node()))</span><br><span class="line">                    tail = head;</span><br><span class="line">            &#125; else &#123;</span><br><span class="line">                /**</span><br><span class="line">                 * 第二次循环：在第一次循环时head赋给了tail,此时tail 不为空，</span><br><span class="line">                 * 进入else块，将线程T2入队，也就是维护链表关系</span><br><span class="line">                 */</span><br><span class="line">                node.prev = t;  // 操作1</span><br><span class="line">                if (compareAndSetTail(t, node)) &#123; // 操作2</span><br><span class="line">                    t.next = node; // 操作3</span><br><span class="line">                    return t;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>enq() 算是上述整个流程的一个分支，为后续讲解更清楚，有必要先详细讲解此方法，画出入队情形下的队列图，流程如下：</p>
+<ol>
+<li>注意这是一个 for 循环，在第一次执行的时候，由于 tail 为 NULL，因此进入 if 块创建了一个空节点，空节点的意思是该节点中没有包含线程，如图所示。</li>
+</ol>
+<p><img src="/img/1409544-20220726170745853-591712558.png"></p>
+<ol start="2">
+<li>第二次循环时，tail 即指向没有线程的那个Node，以下称哑节点，此时 tail 不为空，进入 else 逻辑。</li>
+<li>首先更新 T2 Node 的 prev 指针指向哑节点，然后通过 CAS 设置 T2 Node 为尾节点，因为当前尾节点指向的就是哑节点 t，因此 compareAndSetTail(t, node) 可以成功执行，执行成功后，尾节点指针指向 T2 Node。</li>
+<li>t.next &#x3D; node 将哑节点的 next 指针指向 T2。</li>
+</ol>
+<p>下图是 T2 入队成功后队列图：<br><img src="/img/1409544-20220727154413625-1465669845.png"></p>
+<p>上面是在入队时没有竞争的流程，我们看假如此时 T3 线程也在执行入队逻辑会怎么样。<br>如代码中所标示，三个操作并不是原子性的。如下图所示，对上述队列图做了简化。<br>队列初始完毕时 head 和 tail 指向 Dummy 节点，如果此时 T2 线程和 T3 线程同时执行到 node.prev &#x3D; t 逻辑<br><img src="/img/1409544-20220809165951944-1882958339.svg"><br>接下来执行 compareAndSetTail(t, node) 设置尾节点，由于是 CAS 操作，因此只有一个线程能成功，假设 T2 此次设置成功了，此时队列图如下。<br><img src="/img/1409544-20220809170234349-703847964.svg"><br>T3 线程执行 CAS 则失败，因为是 for 循环，所以重新执行一遍 for 中的逻辑，此时 T3 拿到的尾节点就是 T2了，这次没有竞争的情况下将尾节点设置为了自己并且 prev 指向 T2, 此时队列图如下。</p>
+<p><img src="/img/1409544-20220809171504988-668098089.svg"></p>
+<p>注意此时的图，此时两个线程都还未执行 t.next &#x3D; node，两个 next 指针都还没有被设置，实际情况可能 T2 或者 T3 先执行了这两个语句，但是无论如何 next 指针会出现为 null 的情况，这种情况涉及到两个问题，一是从队列中出队的时候如果用 next 指针从前往后遍历取节点的时候会误以为没有下一个节点实际上有，二是在 ReentrantLock 判断线程是否需要排队时特殊处理（留待 ReentrantLock 细讲）。<br>当执行完这两条语句后，入队就结束了，可以看到整个入队过程是可以保证最终结果是正确的。<br><img src="/img/1409544-20220809173223499-1581080836.svg"></p>
+<h4 id="4-acquireQueued-final-Node-node-int-arg"><a href="#4-acquireQueued-final-Node-node-int-arg" class="headerlink" title="4. acquireQueued(final Node node, int arg)"></a>4. acquireQueued(final Node node, int arg)</h4><p>对上述流程第4点进行拆解，执行完毕 addWaiter() 返回当前节点 T2 Node，接着就进入acquireQueued 方法，我们来看该方法的流程：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line">final boolean acquireQueued(final Node node, int arg) &#123;</span><br><span class="line">        // 标记自己是否拿到了资源 true为没有获取到。</span><br><span class="line">        boolean failed = true;</span><br><span class="line">        try &#123;</span><br><span class="line">            // 标记等待过程中是否被中断过</span><br><span class="line">            boolean interrupted = false;</span><br><span class="line">            for (;;) &#123;</span><br><span class="line">                // 拿到前驱节点</span><br><span class="line">                final Node p = node.predecessor();</span><br><span class="line">                // 判断上一个节点是否是头部，即当前节点为队列中第二个节点，tryAcquire()尝试获取锁</span><br><span class="line">                if (p == head &amp;&amp; tryAcquire(arg)) &#123;</span><br><span class="line">                    // 将自己设置为头结点</span><br><span class="line">                    setHead(node);</span><br><span class="line">                    // 断开原先的哑节点与当前节点的next连接</span><br><span class="line">                    p.next = null; // help GC</span><br><span class="line">                    // 标记已经获取到节点</span><br><span class="line">                    failed = false;</span><br><span class="line">                    // 返回线程中断标记</span><br><span class="line">                    return interrupted;</span><br><span class="line">                &#125;</span><br><span class="line">                /**</span><br><span class="line">                 *  判断在一次自旋加锁失败后是否需要睡眠</span><br><span class="line">                 * 	自旋第一次时shouldParkAfterFailedAcquire(p, node)返回false, 不会进入if块</span><br><span class="line">                 * 	自旋第二次时，shouldParkAfterFailedAcquire(p, node)返回true,</span><br><span class="line">                 * 	此时进入parkAndCheckInterrupt()方法，此时线程阻塞在 parkAndCheckInterrupt()</span><br><span class="line">                 * 	如果线程休息过程中被中断过（Thread.interrupted();）， interrupted 返回true</span><br><span class="line">                 */</span><br><span class="line">                if (shouldParkAfterFailedAcquire(p, node) &amp;&amp;</span><br><span class="line">                        parkAndCheckInterrupt())</span><br><span class="line">                    interrupted = true;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125; finally &#123;</span><br><span class="line">            if (failed)</span><br><span class="line">                cancelAcquire(node);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>该方法有两个标记，一个是 failed 标记是否拿到了资源，注意默认为 true 的时候是没有拿到，另一个是中断标记 interrupted 默认为 false, 该标记的含义不是该线程是否已经被打断过，而是是否需要被打断。我们先看 for 循环中的逻辑再看 finally 块。</p>
+<ol>
+<li>首先拿到当前节点的前驱节点，当前节点就是返回的节点 T2 Node，因此它的前驱节点就是哑节点。</li>
+<li>判断上一个节点是否为头部，如果是通过 tryAcquire(arg) 再次尝试获取锁。CLH 是一个先进先出的队列，第一个节点是哑节点，所以无需竞争锁，也就是只有队列中的第二个节点才有再次竞争锁资源的资格。这里为什么又要调用一次 tryAcquire() 呢？因为这时候线程 T1 有可能已经释放了资源，这里也就是常说的自旋锁，但是只自旋了一次。</li>
+<li>如果这次加锁成功，那么进入 if 块，首先看 setHead()的逻辑，在这里 T2 节点替代了原先的哑节点作为头节点，并且自己成了哑节点。然后断开与之前的哑节点的所有连接，原哑节点等待 GC 回收。</li>
+</ol>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">private void setHead(Node node) &#123;</span><br><span class="line">        head = node;</span><br><span class="line">        // 当前节点的线程字段置为空，也就是这个节点替代了原先的哑节点变成了新的哑节点</span><br><span class="line">        node.thread = null;</span><br><span class="line">        // 断开与原哑节点的prev连接</span><br><span class="line">        node.prev = null;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/1409544-20220727144734265-333722338.png"></p>
+<ol start="4">
+<li>failed 标记设置为 false，表示成功获取到资源，然后返回 interrupted 中断标记，此时还是为 false ，也就是无需打断，方法返回之后就可以开始执行临界区了。关于 interrupted 标记待 parkAndCheckInterrupt 方法的时候会细讲，在这次如果直接加锁成功的情况下也就是还没有走下面的 park 阻塞逻辑的时候，该打断标记就是 false。</li>
+<li>如果此次加锁失败，则向下执行，首先执行 shouldParkAfterFailedAcquire(p, node) 方法</li>
+</ol>
+<h4 id="5-shouldParkAfterFailedAcquire-Node-pred-Node-node"><a href="#5-shouldParkAfterFailedAcquire-Node-pred-Node-node" class="headerlink" title="5. shouldParkAfterFailedAcquire(Node pred, Node node)"></a>5. shouldParkAfterFailedAcquire(Node pred, Node node)</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line">/**</span><br><span class="line">     * 检查当前节点并更新状态，返回是否需要被阻塞</span><br><span class="line">     * Checks and updates status for a node that failed to acquire.</span><br><span class="line">     * Returns true if thread should block. This is the main signal</span><br><span class="line">     * control in all acquire loops.  Requires that pred == node.prev.</span><br><span class="line">     *</span><br><span class="line">     * @param pred node&#x27;s predecessor holding status 前置节点</span><br><span class="line">     * @param node the node 当前节点</span><br><span class="line">     * @return &#123;@code true&#125; if thread should block 是否需要被阻塞</span><br><span class="line">     */</span><br><span class="line">    private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) &#123;</span><br><span class="line">        // 前置节点的状态，ws默认值为0</span><br><span class="line">        int ws = pred.waitStatus;</span><br><span class="line">        // SIGNAL默认值为1</span><br><span class="line">        if (ws == Node.SIGNAL)</span><br><span class="line">            /*</span><br><span class="line">             * This node has already set status asking a release</span><br><span class="line">             * to signal it, so it can safely park.</span><br><span class="line">             */</span><br><span class="line">            return true;</span><br><span class="line">        // 前置节点处于取消状态</span><br><span class="line">        if (ws &gt; 0) &#123;</span><br><span class="line">            /*</span><br><span class="line">             * Predecessor was cancelled. Skip over predecessors and</span><br><span class="line">             * indicate retry.</span><br><span class="line">             * 如果前置节点不是正常的等待状态那么就继续往前找直到找到一个正在等待装填的节点。将其后置节点断开接上当前节点。GC会回收一堆相互引用又没有外部引用的节点。</span><br><span class="line">             */</span><br><span class="line">            do &#123;</span><br><span class="line">                node.prev = pred = pred.prev;</span><br><span class="line">            &#125; while (pred.waitStatus &gt; 0);</span><br><span class="line">            pred.next = node;</span><br><span class="line">        &#125; else &#123;</span><br><span class="line">            /*</span><br><span class="line">             * waitStatus must be 0 or PROPAGATE.  Indicate that we</span><br><span class="line">             * need a signal, but don&#x27;t park yet.  Caller will need to</span><br><span class="line">             * retry to make sure it cannot acquire before parking.</span><br><span class="line">             */</span><br><span class="line">            compareAndSetWaitStatus(pred, ws, Node.SIGNAL);</span><br><span class="line">        &#125;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>接上述流程，T2 线程获取资源失败，因而走此方法逻辑，此时传进该方法的参数 p 是 T2 Node 的前置节点，也就是哑节点（注意因没获取到资源没有进入if块，哑节点还是最先创建的那个哑节点）。这个方法就是在线程没有获取资源的情况下不断自旋直到进入阻塞状态或者是加锁成功，shouldParkAfterFailedAcquire 就是返回一个布尔值判断当前线程是否需要进行阻塞。<br><img src="/img/1409544-20220727112118427-626593600.png"><br>流程如下：</p>
+<ol>
+<li>拿到哑节点的 waitStatus （以下简称ws）状态，这个状态初始值是 0。<br><img src="/img/1409544-20220727112758456-1751317714.png"></li>
+<li>ws 的值为 0, 所以进入 else 逻辑，将 ws 设置为了 -1 （SIGNAL），返回flase。</li>
+<li>回到 acquireQueued() 方法 因为返回的是 false，&amp;&amp; 的短路性质，没有再执行后一个逻辑，进入下一次循环<br><img src="/img/1409544-20220727113439745-655311753.png"></li>
+<li>假设 T2 此时仍然没有加锁成功，继续走到这个 shouldParkAfterFailedAcquire() 这个方法中，由于上一次哑节点的状态被修改成了 SIGNAL，这次进入第一个 if 块，返回了 true。</li>
+<li>回到 acquireQueued() 方法，向下执行 parkAndCheckInterrupt()，我们接着看该方法的逻辑。</li>
+</ol>
+<h4 id="6-parkAndCheckInterrupt"><a href="#6-parkAndCheckInterrupt" class="headerlink" title="6.parkAndCheckInterrupt()"></a>6.parkAndCheckInterrupt()</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">private final boolean parkAndCheckInterrupt() &#123;</span><br><span class="line">        // 线程阻塞在这，被打断后才会往下执行, 此时打断标记为 true</span><br><span class="line">        LockSupport.park(this);</span><br><span class="line">        // 返回打断标记并重置为false</span><br><span class="line">        return Thread.interrupted();</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>这个方法比较简单，就是在上一个方法判断要阻塞之后调用这个方法，通过执行 park() 方法将线程阻塞在此处，直到有另一个线程将其唤醒。唤醒的方式有两种，一是调用 unpark() 方法，二是使用  interrupt() 方法置中断标记为 true。T2 Node 阻塞在此处被唤醒后就继续往下走执行 Thread.interrupted()， 该方法会重置中断标记并且给出是否被中断，因此此方法最终会返回一个 bool 值，表明该线程是否需要被打断。<br>T2 Node 执行到此处则一直阻塞在这了，为了讲清楚这些细节，我们按实际场景讲述，这个线程就阻塞在这了， T2 Node 被唤醒必然是另一个线程对其执行了 unpark() 或者 interrupt() 方法，我们先来看调用 unpark() 的情况，也就是线程 T1 解锁的流程。</p>
+<h2 id="独占模式解锁"><a href="#独占模式解锁" class="headerlink" title="独占模式解锁"></a>独占模式解锁</h2><h4 id="1-release-int-arg"><a href="#1-release-int-arg" class="headerlink" title="1. release(int arg)"></a>1. release(int arg)</h4><p>书接上回，T2 阻塞住了，此时 T1 执行完毕临界区，开始进行解锁，解锁操作首先是恢复锁状态 State 为可用，其中是否重入等细节由继承AQS 的同步工具实现（待讲 ReentrantLock 再讲此处细节），此处略过不表，我们重点关注 AQS 的锁释放原理，解锁过程（独占模式下）最终会调用到 AQS 的 release(int arg) 方法，流程如下：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">public final boolean release(int arg) &#123;</span><br><span class="line">        if (tryRelease(arg)) &#123;</span><br><span class="line">            // 头结点存在 且头结点状态不为0</span><br><span class="line">            // 如果头结点不为初始化状态则唤醒队列下一个等待的线程</span><br><span class="line">            Node h = head;</span><br><span class="line">            if (h != null &amp;&amp; h.waitStatus != 0)</span><br><span class="line">                unparkSuccessor(h);</span><br><span class="line">            return true;</span><br><span class="line">        &#125;</span><br><span class="line">        return false;</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<ol>
+<li>首先调用 tryRelease() 方法，和加锁同理，这个方法也由继承 AQS 的同步工具释放，这个函数返回一个布尔值，true 表明释放锁成功，false 解锁失败，T1 线程释放资源后，这个方法必然返回true，于是进入 if 块。</li>
+<li>判断头节点是否存在且头节点状态是否不为0，我把上面 T2 入队的图拿了下来，可以看到这个时候头节点是哑节点，其状态 ws 在 T2 入队的时候被修改了为 -1，此时可以进入if块，执行unparkSuccessor() 方法，入参是哑节点，我们接下来看这个方法的源码。</li>
+</ol>
+<p><img src="/img/1409544-20220727154543179-149053159.png"></p>
+<h4 id="2-unparkSuccessor-Node-node"><a href="#2-unparkSuccessor-Node-node" class="headerlink" title="2. unparkSuccessor(Node node)"></a>2. unparkSuccessor(Node node)</h4><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br></pre></td><td class="code"><pre><span class="line">private void unparkSuccessor(Node node) &#123;</span><br><span class="line">    /*</span><br><span class="line">     * If status is negative (i.e., possibly needing signal) try</span><br><span class="line">     * to clear in anticipation of signalling.  It is OK if this</span><br><span class="line">     * fails or if status is changed by waiting thread.</span><br><span class="line">     * 获取当前节点状态</span><br><span class="line">     */</span><br><span class="line">    int ws = node.waitStatus;</span><br><span class="line">    // 该节点状态是有效的 就将其设置为初始化状态</span><br><span class="line">    if (ws &lt; 0)</span><br><span class="line">        compareAndSetWaitStatus(node, ws, 0);</span><br><span class="line"></span><br><span class="line">    /*</span><br><span class="line">     * Thread to unpark is held in successor, which is normally</span><br><span class="line">     * just the next node.  But if cancelled or apparently null,</span><br><span class="line">     * traverse backwards from tail to find the actual</span><br><span class="line">     * non-cancelled successor.</span><br><span class="line">     * 从尾节点往前找， 找到一个waitStatus 小于0 的Node</span><br><span class="line">     */</span><br><span class="line">    Node s = node.next;</span><br><span class="line">    if (s == null || s.waitStatus &gt; 0) &#123;</span><br><span class="line">        s = null;</span><br><span class="line">        for (Node t = tail; t != null &amp;&amp; t != node; t = t.prev)</span><br><span class="line">            if (t.waitStatus &lt;= 0)</span><br><span class="line">                s = t;</span><br><span class="line">    &#125;</span><br><span class="line">    if (s != null)</span><br><span class="line">        LockSupport.unpark(s.thread);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>此时流程如下：</p>
+<ol>
+<li>取出哑节点状态，此时为-1，将其更改为0；</li>
+<li>接着取出下一个节点，在这里哑节点的下一个节点即 T2 Node，T2 不为空，执行 LockSupport.unpark(s.thread) 唤醒 T2 线程。<br>注意这里有一个 s&#x3D;&#x3D; null 的 if 分支，这是因为 next 指针是不可靠的，上面 enq() 方法已经细讲过 ，会出现为 null 的情况，因此需要通过 prev 指针来从尾部开始遍历直到找到最后个可被唤醒的线程，注意这里说的最后一个的意思即是队头开始第一个需要被唤醒的线程（没有调用 break 打破循环），因此并没有破坏队列先进先出的规则。</li>
+</ol>
+<h2 id="T2-线程被-unpark-唤醒"><a href="#T2-线程被-unpark-唤醒" class="headerlink" title="T2 线程被 unpark() 唤醒"></a>T2 线程被 unpark() 唤醒</h2><p><img src="/img/1409544-20220727171411946-1684552703.png"></p>
+<p>上面的解锁流程的最后，T2 线程被唤醒，继续往下执行, 注意这里我看其他博客说的有点问题，在被 unpark 唤醒的情况下是不会修改中断标记的，因此这里返回的是 false，所以回到 acquireQueued 方法中并不会执行下面这行代码，关于 unpark() 和 interrupt() 我单独<a target="_blank" rel="noopener" href="https://www.cnblogs.com/oyoung/p/16525582.html">开篇博客讲下</a>。</p>
+<p><img src="/img/1409544-20220727171958406-79519653.png"></p>
+<p>T2 线程被唤醒后就开始有了竞争锁的资格，这时候 for 循环又开始执行，即再次竞争锁，假如这次加锁成功（加锁失败就又继续阻塞，咱就没必要继续讲了，为了闭环我们假设这次加锁成功），那么返回中断标记 interrupted，这个值为 false。<br><img src="/img/1409544-20220727172509138-1133551296.png"><br>此时也就完成了锁的更替 由 T1 变成了 T2，整个环节就闭环了，在这上面的讲解过程中没有引入更多的线程是为了避免讨论复杂化，在 T3、T4 甚至更多线程来临时同样是遵循的上述代码流程，只是因为多线程并发，这其中哪个线程能获取到锁、链表的维护是否正确，唤醒的时候唤醒的是哪个线程这些事并不可控，因而也没有必要一个个场景来复现，只要弄清楚原理想必足够了。</p>
+<h2 id="T2-线程被-interrupt-唤醒"><a href="#T2-线程被-interrupt-唤醒" class="headerlink" title="T2 线程被 interrupt() 唤醒"></a>T2 线程被 interrupt() 唤醒</h2><ol>
+<li>这个流程和上述 unpark() 流程是并列的，承接的是 T2 被阻塞住的流程，T2 阻塞在此处，若 T1 在执行临界区的时候调用了 T2.interrupt() 方法，则也会对 park 解锁，T2 线程就被唤醒了，且中断标记在 interrupt() 执行的时候被置为 true，此方法返回true。<br><img src="/img/1409544-20220727173353558-426393580.png"></li>
+<li>回到 acquireQueued 方法中，interrupted 标记被修改，但是没有立即返回，直到 T2 线程获取到了资源后返回中断标记 true。<br><img src="/img/1409544-20220727174323087-392095070.png"></li>
+<li>最终执行到 selfInterrupt() 方法重置一次中断标记<br><img src="/img/1409544-20220727174535952-1965854855.png"></li>
+</ol>
+<h1 id="一些-AQS-设计的疑问"><a href="#一些-AQS-设计的疑问" class="headerlink" title="一些 AQS 设计的疑问"></a>一些 AQS 设计的疑问</h1><ol>
+<li>在被中断打断后为什么还要调用 selfInterrupt() 再中断一次？<br><img src="/img/1409544-20220810172308226-339004684.png"><br>在 parkAndCheckInterrupt() 方法中，如果线程是被 interrupt() 唤醒的，接下来 Thread.interrupted() 这句将标记清空了，如果调用加锁的线程要使用该中断标记，标记却已经被清除了，因此最后还需要调用一次 selfInterrupt() 设置中断标记，这也是中断机制惯例用法。</li>
+<li>在加锁成功后的出队过程中，为什么要将出对的线程 Node 去替代哑节点成为新的哑节点？直接断开指针，哑节点指向下一个节点会如何呢？<br><img src="/img/1409544-20220727180117949-2141179233.png"></li>
+<li>为什么要设置哑节点？（在 ReentrantLock 篇讲解）</li>
+</ol>
+<h1 id="结语"><a href="#结语" class="headerlink" title="结语"></a>结语</h1><p>研读源码过程中发现所需时间耗费过长，在这个以敏捷为王的时代，偶尔也疑虑如此费劲周章地研习源码能有何收获，成本与收获似不成正比。故而 AQS 的源码暂且看到这，想必知晓原理已足够，后续若有闲思再补充共享式加锁和解锁流程细节。<br>2022.8.10 在看 ReentrantLock 源码时对之前的一些疑问有了想法，因此对文中 enq() 方法做了补充，勘误了其中一些错误，本文中一些没有解释清楚的疑问可以<a target="_blank" rel="noopener" href="https://www.cnblogs.com/oyoung/p/16543215.html">ReentrantLock 源码篇</a> 。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta">文章作者: </span><span class="post-copyright-info"><a href="http://ashleyye.top">joywu</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta">文章链接: </span><span class="post-copyright-info"><a href="http://ashleyye.top/2020/03/10/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%B8%89%E4%B9%8BAQS%20%E5%8E%9F%E7%90%86%E6%8E%A2%E7%B4%A2/">http://ashleyye.top/2020/03/10/多线程与高并发三之AQS 原理探索/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta">版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="http://ashleyye.top" target="_blank">Ashley的个人博客空间</a>！</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/%E5%A4%9A%E7%BA%BF%E7%A8%8B/">多线程</a><a class="post-meta__tags" href="/tags/%E7%BA%BF%E7%A8%8B%E6%B1%A0/">线程池</a><a class="post-meta__tags" href="/tags/AQS/">AQS</a></div><div class="post_share"><div class="social-share" data-image="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png" data-sites="facebook,twitter,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/sharejs/dist/js/social-share.min.js" defer></script></div></div><div class="post-reward"><div class="reward-button"><i class="fas fa-qrcode"></i> 打赏</div><div class="reward-main"><ul class="reward-all"><li class="reward-item"><a href="/img/wechat.png" target="_blank"><img class="post-qr-code-img" src="/img/wechat.png" alt="微信"/></a><div class="post-qr-code-desc">微信</div></li><li class="reward-item"><a href="/img/alipay.jpg" target="_blank"><img class="post-qr-code-img" src="/img/alipay.jpg" alt="支付宝"/></a><div class="post-qr-code-desc">支付宝</div></li></ul></div></div><nav class="pagination-post" id="pagination"><div class="prev-post pull-left"><a href="/2020/03/16/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E5%9B%9B%E4%B9%8BJava%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6/" title="多线程与高并发四之Java中断机制"><div class="cover" style="background: var(--default-bg-color)"></div><div class="pagination-info"><div class="label">上一篇</div><div class="prev_info">多线程与高并发四之Java中断机制</div></div></a></div><div class="next-post pull-right"><a href="/2020/03/08/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E5%88%9D%E6%AD%A5%E6%95%B4%E7%90%86/" title="操作系统初步整理"><div class="cover" style="background: var(--default-bg-color)"></div><div class="pagination-info"><div class="label">下一篇</div><div class="next_info">操作系统初步整理</div></div></a></div></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>相关推荐</span></div><div class="relatedPosts-list"><div><a href="/2020/03/16/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E5%9B%9B%E4%B9%8BJava%E4%B8%AD%E6%96%AD%E6%9C%BA%E5%88%B6/" title="多线程与高并发四之Java中断机制"><div class="cover" style="background: var(--default-bg-color)"></div><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2020-03-16</div><div class="title">多线程与高并发四之Java中断机制</div></div></a></div><div><a href="/2020/03/02/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%B8%80%E4%B9%8BSynchronized%E7%90%86%E8%A7%A3%E7%AF%87/" title="多线程与高并发一之Synchronized理解篇"><div class="cover" style="background: var(--default-bg-color)"></div><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2020-03-02</div><div class="title">多线程与高并发一之Synchronized理解篇</div></div></a></div><div><a href="/2020/03/05/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%BA%8C%E4%B9%8BSynchronized%E5%8A%A0%E9%94%81%E8%A7%A3%E9%94%81%E7%AF%87/" title="多线程与高并发二之Synchronized加锁解锁篇"><div class="cover" style="background: var(--default-bg-color)"></div><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2020-03-05</div><div class="title">多线程与高并发二之Synchronized加锁解锁篇</div></div></a></div><div><a href="/2020/03/25/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%BA%94%E4%B9%8B%20ReentrantLock%E7%AF%87/" title="多线程与高并发五之 ReentrantLock篇"><div class="cover" style="background: var(--default-bg-color)"></div><div class="content is-center"><div class="date"><i class="far fa-calendar-alt fa-fw"></i> 2020-03-25</div><div class="title">多线程与高并发五之 ReentrantLock篇</div></div></a></div></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info"><div class="is-center"><div class="avatar-img"><img src="https://i.loli.net/2021/02/24/5O1day2nriDzjSu.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info__name">joywu</div><div class="author-info__description">余生有你,幸莫大焉</div></div><div class="card-info-data site-data is-center"><a href="/archives/"><div class="headline">文章</div><div class="length-num">36</div></a><a href="/tags/"><div class="headline">标签</div><div class="length-num">17</div></a><a href="/categories/"><div class="headline">分类</div><div class="length-num">5</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://gitee.com/wzl0258"><i class="fab fa-github"></i><span>Follow Me</span></a><div class="card-info-social-icons is-center"><a class="social-icon" href="https://gitee.com/wzl0258" target="_blank" title="Gitee"><i class="fab fa-github"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>公告</span></div><div class="announcement_content">哈喽，欢迎来到我的博客！</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>目录</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8E%E9%AB%98%E5%B9%B6%E5%8F%91%E4%B8%89%E4%B9%8BAQS-%E5%8E%9F%E7%90%86%E6%8E%A2%E7%B4%A2"><span class="toc-number">1.</span> <span class="toc-text">多线程与高并发三之AQS 原理探索</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E4%B8%80%E3%80%81%E5%89%8D%E8%A8%80"><span class="toc-number">2.</span> <span class="toc-text">一、前言</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E4%BA%8C%E3%80%81%E5%85%B6%E4%BB%96%E5%90%8C%E6%AD%A5%E5%B7%A5%E5%85%B7%E7%9A%84%E7%BC%BA%E7%82%B9"><span class="toc-number">3.</span> <span class="toc-text">二、其他同步工具的缺点</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#Mutex"><span class="toc-number">3.1.</span> <span class="toc-text">Mutex</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Semaphore"><span class="toc-number">3.2.</span> <span class="toc-text">Semaphore</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Monitor"><span class="toc-number">3.3.</span> <span class="toc-text">Monitor</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E4%B8%89%E3%80%81AQS-%E6%A6%82%E8%BF%B0"><span class="toc-number">4.</span> <span class="toc-text">三、AQS 概述</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BB%80%E4%B9%88%E6%98%AF-AQS-%EF%BC%9F"><span class="toc-number">4.1.</span> <span class="toc-text">什么是 AQS ？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#AQS-%E5%81%9A%E4%BA%86%E4%BB%80%E4%B9%88%E4%BA%8B%EF%BC%9F"><span class="toc-number">4.2.</span> <span class="toc-text">AQS 做了什么事？</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#AQS-%E8%AE%BE%E8%AE%A1"><span class="toc-number">4.3.</span> <span class="toc-text">AQS 设计</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E5%9B%9B%E3%80%81AQS-%E5%8E%9F%E7%90%86"><span class="toc-number">5.</span> <span class="toc-text">四、AQS 原理</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8E%9F%E7%90%86%E6%A6%82%E6%8B%AC"><span class="toc-number">5.1.</span> <span class="toc-text">原理概括</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#Node-%E8%AE%BE%E8%AE%A1"><span class="toc-number">5.2.</span> <span class="toc-text">Node 设计</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E4%BA%94%E3%80%81%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90"><span class="toc-number">6.</span> <span class="toc-text">五、源码分析</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%8B%AC%E5%8D%A0%E6%A8%A1%E5%BC%8F%E5%8A%A0%E9%94%81"><span class="toc-number">6.1.</span> <span class="toc-text">独占模式加锁</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-acquire-int-arg"><span class="toc-number">6.1.0.1.</span> <span class="toc-text">1. acquire(int arg)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-addWaiter-Node-mode"><span class="toc-number">6.1.0.2.</span> <span class="toc-text">2. addWaiter(Node mode)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#3-enq-final-Node-node"><span class="toc-number">6.1.0.3.</span> <span class="toc-text">3. enq(final Node node)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#4-acquireQueued-final-Node-node-int-arg"><span class="toc-number">6.1.0.4.</span> <span class="toc-text">4. acquireQueued(final Node node, int arg)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#5-shouldParkAfterFailedAcquire-Node-pred-Node-node"><span class="toc-number">6.1.0.5.</span> <span class="toc-text">5. shouldParkAfterFailedAcquire(Node pred, Node node)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#6-parkAndCheckInterrupt"><span class="toc-number">6.1.0.6.</span> <span class="toc-text">6.parkAndCheckInterrupt()</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E7%8B%AC%E5%8D%A0%E6%A8%A1%E5%BC%8F%E8%A7%A3%E9%94%81"><span class="toc-number">6.2.</span> <span class="toc-text">独占模式解锁</span></a><ol class="toc-child"><li class="toc-item toc-level-4"><a class="toc-link" href="#1-release-int-arg"><span class="toc-number">6.2.0.1.</span> <span class="toc-text">1. release(int arg)</span></a></li><li class="toc-item toc-level-4"><a class="toc-link" href="#2-unparkSuccessor-Node-node"><span class="toc-number">6.2.0.2.</span> <span class="toc-text">2. unparkSuccessor(Node node)</span></a></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#T2-%E7%BA%BF%E7%A8%8B%E8%A2%AB-unpark-%E5%94%A4%E9%86%92"><span class="toc-number">6.3.</span> <span class="toc-text">T2 线程被 unpark() 唤醒</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#T2-%E7%BA%BF%E7%A8%8B%E8%A2%AB-interrupt-%E5%94%A4%E9%86%92"><span class="toc-number">6.4.</span> <span class="toc-text">T2 线程被 interrupt() 唤醒</span></a></li></ol></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E4%B8%80%E4%BA%9B-AQS-%E8%AE%BE%E8%AE%A1%E7%9A%84%E7%96%91%E9%97%AE"><span class="toc-number">7.</span> <span class="toc-text">一些 AQS 设计的疑问</span></a></li><li class="toc-item toc-level-1"><a class="toc-link" href="#%E7%BB%93%E8%AF%AD"><span class="toc-number">8.</span> <span class="toc-text">结语</span></a></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>最新文章</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/06/24/hello-world/" title="无题">无题</a><time datetime="2023-06-24T08:54:12.288Z" title="发表于 2023-06-24 16:54:12">2023-06-24</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/03/14/docker%E7%9F%A5%E8%AF%86%E4%BB%8B%E7%BB%8D/" title="Docker从零开始">Docker从零开始</a><time datetime="2023-03-14T10:00:00.000Z" title="发表于 2023-03-14 18:00:00">2023-03-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2023/02/25/%E8%A7%A3%E5%86%B3%E9%A1%B9%E7%9B%AE%E4%B8%AD%E6%95%B0%E6%8D%AE%E4%B8%8D%E4%B8%80%E8%87%B4%E9%97%AE%E9%A2%98/" title="解决项目中数据不一致问题">解决项目中数据不一致问题</a><time datetime="2023-02-25T10:00:00.000Z" title="发表于 2023-02-25 18:00:00">2023-02-25</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2022/12/14/MySql/" title="MySql短记">MySql短记</a><time datetime="2022-12-14T10:00:00.000Z" title="发表于 2022-12-14 18:00:00">2022-12-14</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2022/10/24/%E8%A7%A3%E5%86%B3%E9%A1%B9%E7%9B%AE%E5%89%8D%E7%AB%AF%E9%A1%B5%E9%9D%A2%E5%93%8D%E5%BA%94%E9%97%AE%E9%A2%98/" title="解决项目前端页面响应问题">解决项目前端页面响应问题</a><time datetime="2022-10-24T10:00:00.000Z" title="发表于 2022-10-24 18:00:00">2022-10-24</time></div></div></div></div></div></div></main><footer id="footer"><div id="footer-wrap"><div class="copyright">&copy;2020 - 2023 By joywu</div><div class="framework-info"><span>框架 </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo</a><span class="footer-separator">|</span><span>主题 </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly</a></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="阅读模式"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="浅色和深色模式转换"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="单栏和双栏切换"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside_config" type="button" title="设置"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="目录"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="回到顶部"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js"></script><script src="/js/main.js"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui/dist/fancybox/fancybox.umd.min.js"></script><div class="js-pjax"></div><script id="canvas_nest" defer="defer" color="0,0,255" opacity="0.7" zIndex="-1" count="99" mobile="false" src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/canvas-nest.min.js"></script><script id="click-heart" src="https://cdn.jsdelivr.net/npm/butterfly-extsrc/dist/click-heart.min.js" async="async" mobile="false"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">搜索</span><span id="loading-status"></span><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="is-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  数据库加载中</span></div><div class="search-wrap"><div id="local-search-input"><div class="local-search-box"><input class="local-search-box--input" placeholder="搜索文章" type="text"/></div></div><hr/><div class="no-result" id="local-search-results"></div><div id="local-search-stats-wrap"></div></div></div><div id="search-mask"></div><script src="/js/search/local-search.js"></script></div></div></body></html>
